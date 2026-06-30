@@ -4,7 +4,9 @@ WORKDIR /src
 COPY web/package*.json ./web/
 WORKDIR /src/web
 RUN npm ci
-COPY web ./
+COPY web/index.html ./index.html
+COPY web/vite.config.js ./vite.config.js
+COPY web/src ./src
 RUN npm run build
 
 FROM nginx:1.27-alpine

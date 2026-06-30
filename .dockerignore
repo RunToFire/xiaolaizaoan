@@ -1,0 +1,13 @@
+.git
+.agents
+.env
+
+app/.env
+app/runtime
+app/vendor
+
+web/node_modules
+web/dist
+web/.npm-cache
+
+docker/mysql/data
