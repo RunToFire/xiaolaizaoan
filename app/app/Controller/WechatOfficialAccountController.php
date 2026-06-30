@@ -9,6 +9,8 @@ use App\Service\Wechat\WechatReplyService;
 use Hyperf\HttpMessage\Stream\SwooleStream;
 use Psr\Http\Message\ResponseInterface;
 
+use function Hyperf\Support\env;
+
 class WechatOfficialAccountController extends AbstractController
 {
     public function callback(?string $appId = null): ResponseInterface
