@@ -6,6 +6,7 @@ WORKDIR /src/web
 RUN npm ci
 COPY web/index.html ./index.html
 COPY web/vite.config.js ./vite.config.js
+COPY web/public ./public
 COPY web/src ./src
 RUN npm run build
 
