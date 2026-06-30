@@ -21,16 +21,22 @@ services:
       DB_DATABASE: ${DB_DATABASE:-wechat}
       DB_USERNAME: ${DB_USERNAME:-hyperf}
       DB_PASSWORD: ${DB_PASSWORD:-change_me}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_DB: ${REDIS_DB:-0}
       WECHAT_OFFICIAL_ACCOUNT_APPID: ${WECHAT_OFFICIAL_ACCOUNT_APPID:-}
       WECHAT_OFFICIAL_ACCOUNT_SECRET: ${WECHAT_OFFICIAL_ACCOUNT_SECRET:-}
       WECHAT_OFFICIAL_ACCOUNT_TOKEN: ${WECHAT_OFFICIAL_ACCOUNT_TOKEN:-}
       WECHAT_OFFICIAL_ACCOUNT_AES_KEY: ${WECHAT_OFFICIAL_ACCOUNT_AES_KEY:-}
+      ADMIN_TOKEN: ${ADMIN_TOKEN:-}
     volumes:
       - ./app:/opt/www
     expose:
       - "9501"
     depends_on:
       mysql:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "php -r '$$s=@fsockopen(\"127.0.0.1\", (int)getenv(\"APP_PORT\") ?: 9501); exit($$s ? 0 : 1);'"]
@@ -85,9 +91,25 @@ services:
     networks:
       - webnet
 
+  redis:
+    image: redis:7.4-alpine
+    container_name: hyperf_redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+    networks:
+      - webnet
+
 networks:
   webnet:
     driver: bridge
 
 volumes:
   mysql_data:
+  redis_data:

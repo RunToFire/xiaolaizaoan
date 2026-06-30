@@ -40,6 +40,10 @@ Start the service:
 docker compose up -d --build
 ```
 
+The compose stack includes MySQL, Redis, Hyperf, and Nginx. Redis is used by
+the default Hyperf cache/model-cache configuration, and the app connects to it
+through the `redis` service name.
+
 The web service will be available at:
 
 ```text
@@ -76,3 +80,53 @@ https://your-domain.example/wechat/official-account
 
 Configure that URL in the WeChat Official Account backend with the same token
 and AES key that you set in `.env`.
+
+## WeChat Admin
+
+Run migrations after MySQL is running:
+
+```bash
+docker compose exec app php bin/hyperf.php migrate
+```
+
+Open the management page:
+
+```text
+https://your-domain.example/admin/wechat
+```
+
+Set `ADMIN_TOKEN` in `.env` before opening the page. The browser will show a
+login prompt; use any username and the `ADMIN_TOKEN` value as the password.
+
+The page can add official account AppID, secret, token, AES key, and reply
+rules, and can save/publish the official account menu. For multiple official
+accounts, configure each WeChat backend callback URL as:
+
+```text
+https://your-domain.example/wechat/official-account/{APPID}
+```
+
+Reply rules match by message type, event, optional keyword, and priority. Text
+replies use JSON like:
+
+```json
+{"text":"欢迎关注"}
+```
+
+Image and voice replies use:
+
+```json
+{"media_id":"MEDIA_ID"}
+```
+
+News replies use:
+
+```json
+{"articles":[{"title":"标题","description":"摘要","pic_url":"https://example.com/a.jpg","url":"https://example.com"}]}
+```
+
+Menu JSON follows the WeChat custom menu format. Example:
+
+```json
+{"button":[{"type":"view","name":"官网","url":"https://example.com"},{"name":"服务","sub_button":[{"type":"click","name":"联系客服","key":"CONTACT"}]}]}
+```
