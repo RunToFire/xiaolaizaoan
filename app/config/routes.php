@@ -16,9 +16,10 @@ Router::addRoute(['GET', 'POST', 'HEAD'], '/', 'App\Controller\IndexController@i
 Router::addRoute(['GET', 'POST'], '/wechat/official-account', 'App\Controller\WechatOfficialAccountController@callback');
 Router::addRoute(['GET', 'POST'], '/wechat/official-account/{appId}', 'App\Controller\WechatOfficialAccountController@callback');
 
-Router::addGroup('/admin', function () {
-    Router::get('/wechat', 'App\Controller\Admin\WechatConsoleController@index');
+Router::post('/admin/login', 'App\Controller\Admin\AdminAuthController@login');
+Router::post('/admin/logout', 'App\Controller\Admin\AdminAuthController@logout');
 
+Router::addGroup('/admin', function () {
     Router::get('/wechat/official-accounts', 'App\Controller\Admin\WechatOfficialAccountAdminController@index');
     Router::post('/wechat/official-accounts', 'App\Controller\Admin\WechatOfficialAccountAdminController@store');
     Router::get('/wechat/official-accounts/{id:\d+}', 'App\Controller\Admin\WechatOfficialAccountAdminController@show');

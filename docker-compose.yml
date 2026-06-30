@@ -48,7 +48,9 @@ services:
       - webnet
 
   nginx:
-    image: nginx:1.27-alpine
+    build:
+      context: .
+      dockerfile: docker/nginx/Dockerfile
     container_name: hyperf_nginx
     restart: unless-stopped
     ports:

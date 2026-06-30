@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Middleware;
 
-use Hyperf\HttpMessage\Stream\SwooleStream;
 use Hyperf\HttpServer\Contract\ResponseInterface;
 use Psr\Http\Message\ResponseInterface as PsrResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
@@ -15,6 +14,8 @@ use function Hyperf\Support\env;
 
 class AdminTokenMiddleware implements MiddlewareInterface
 {
+    private const COOKIE_NAME = 'wechat_admin_token';
+
     public function __construct(private ResponseInterface $response)
     {
     }
@@ -54,16 +55,24 @@ class AdminTokenMiddleware implements MiddlewareInterface
         }
 
         $query = $request->getQueryParams();
+        if (isset($query['admin_token'])) {
+            return (string) $query['admin_token'];
+        }
 
-        return (string) ($query['admin_token'] ?? '');
+        $cookies = $request->getCookieParams();
+        if (isset($cookies[self::COOKIE_NAME])) {
+            return (string) $cookies[self::COOKIE_NAME];
+        }
+
+        return '';
     }
 
     private function deny(string $message): PsrResponseInterface
     {
-        return $this->response
-            ->withStatus(401)
-            ->withHeader('WWW-Authenticate', 'Basic realm="WeChat Admin"')
-            ->withHeader('Content-Type', 'text/plain; charset=utf-8')
-            ->withBody(new SwooleStream($message));
+        return $this->response->json([
+            'code' => 1,
+            'data' => null,
+            'error' => ['message' => $message],
+        ])->withStatus(401);
     }
 }

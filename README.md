@@ -40,9 +40,10 @@ Start the service:
 docker compose up -d --build
 ```
 
-The compose stack includes MySQL, Redis, Hyperf, and Nginx. Redis is used by
-the default Hyperf cache/model-cache configuration, and the app connects to it
-through the `redis` service name.
+The compose stack includes MySQL, Redis, Hyperf, Nginx, and a Vue admin
+frontend built into the Nginx image. Redis is used by the default Hyperf
+cache/model-cache configuration, and the app connects to it through the `redis`
+service name.
 
 The web service will be available at:
 
@@ -96,7 +97,8 @@ https://your-domain.example/admin/wechat
 ```
 
 Set `ADMIN_TOKEN` in `.env` before opening the page. The browser will show a
-login prompt; use any username and the `ADMIN_TOKEN` value as the password.
+custom login page; use `admin` as the username and the `ADMIN_TOKEN` value as
+the password.
 
 The page can add official account AppID, secret, token, AES key, and reply
 rules, and can save/publish the official account menu. For multiple official
