@@ -83,6 +83,7 @@ class WechatOfficialAccountAdminController extends AbstractController
             'token' => $this->request->input('token'),
             'aes_key' => $this->request->input('aes_key'),
             'original_id' => $this->request->input('original_id'),
+            'qrcode_url' => $this->request->input('qrcode_url'),
             'encoding_type' => $this->request->input('encoding_type', $withDefaults ? 'plaintext' : null),
             'is_active' => (int) $this->request->input('is_active', $withDefaults ? 1 : null),
             'menu_config' => $this->request->input('menu_config'),

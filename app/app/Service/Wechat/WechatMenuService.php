@@ -16,12 +16,14 @@ class WechatMenuService
         if (! is_array($menu) || $menu === []) {
             throw new RuntimeException('menu_config is empty');
         }
+        $menu = $this->normalizeMenu($menu);
 
         $accessToken = $this->accessToken($account);
         $client = new Client(['timeout' => 10.0]);
         $response = $client->post('https://api.weixin.qq.com/cgi-bin/menu/create', [
             'query' => ['access_token' => $accessToken],
-            'json' => $menu,
+            'headers' => ['Content-Type' => 'application/json; charset=utf-8'],
+            'body' => json_encode($menu, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR),
         ]);
 
         $result = json_decode((string) $response->getBody(), true);
@@ -34,6 +36,25 @@ class WechatMenuService
         }
 
         return $result;
+    }
+
+    private function normalizeMenu(array $menu): array
+    {
+        foreach ($menu as $key => $value) {
+            if (is_array($value)) {
+                $menu[$key] = $this->normalizeMenu($value);
+                continue;
+            }
+
+            if (is_string($value) && str_contains($value, '\\u')) {
+                $decoded = json_decode('"' . addcslashes($value, "\"\n\r\t\f\b") . '"', true);
+                if (is_string($decoded)) {
+                    $menu[$key] = $decoded;
+                }
+            }
+        }
+
+        return $menu;
     }
 
     private function accessToken(WechatOfficialAccount $account): string

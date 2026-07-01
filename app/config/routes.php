@@ -34,6 +34,22 @@ Router::addGroup('/admin', function () {
     Router::get('/wechat/official-accounts/{accountId:\d+}/menu', 'App\Controller\Admin\WechatMenuAdminController@show');
     Router::put('/wechat/official-accounts/{accountId:\d+}/menu', 'App\Controller\Admin\WechatMenuAdminController@save');
     Router::post('/wechat/official-accounts/{accountId:\d+}/menu/publish', 'App\Controller\Admin\WechatMenuAdminController@publish');
+
+    Router::get('/materials/groups', 'App\Controller\Admin\MaterialAdminController@groups');
+    Router::post('/materials/groups', 'App\Controller\Admin\MaterialAdminController@storeGroup');
+    Router::put('/materials/groups/{id:\d+}', 'App\Controller\Admin\MaterialAdminController@updateGroup');
+    Router::delete('/materials/groups/{id:\d+}', 'App\Controller\Admin\MaterialAdminController@destroyGroup');
+    Router::get('/materials/images', 'App\Controller\Admin\MaterialAdminController@images');
+    Router::post('/materials/images', 'App\Controller\Admin\MaterialAdminController@storeImage');
+    Router::put('/materials/images/{id:\d+}', 'App\Controller\Admin\MaterialAdminController@updateImage');
+    Router::delete('/materials/images/{id:\d+}', 'App\Controller\Admin\MaterialAdminController@destroyImage');
+    Router::get('/materials/images/{id:\d+}/file', 'App\Controller\Admin\MaterialAdminController@imageFile');
+    Router::get('/materials/quotes', 'App\Controller\Admin\MaterialAdminController@quotes');
+    Router::post('/materials/quotes', 'App\Controller\Admin\MaterialAdminController@storeQuote');
+    Router::put('/materials/quotes/{id:\d+}', 'App\Controller\Admin\MaterialAdminController@updateQuote');
+    Router::delete('/materials/quotes/{id:\d+}', 'App\Controller\Admin\MaterialAdminController@destroyQuote');
+
+    Router::get('/punch-records', 'App\Controller\Admin\PunchRecordAdminController@index');
 }, ['middleware' => [AdminTokenMiddleware::class]]);
 
 Router::get('/favicon.ico', function () {

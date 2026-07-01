@@ -6,6 +6,7 @@ namespace App\Controller;
 
 use App\Model\WechatOfficialAccount;
 use App\Service\Wechat\WechatReplyService;
+use App\Service\Wechat\WechatUserService;
 use Hyperf\HttpMessage\Stream\SwooleStream;
 use Psr\Http\Message\ResponseInterface;
 
@@ -38,6 +39,7 @@ class WechatOfficialAccountController extends AbstractController
             return $this->text('success');
         }
 
+        $this->container->get(WechatUserService::class)->touchUser((int) $account->id, $message);
         $xml = $this->container->get(WechatReplyService::class)->buildReplyXml((int) $account->id, $message);
 
         return $this->xml($xml);

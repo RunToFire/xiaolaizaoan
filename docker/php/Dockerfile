@@ -11,6 +11,11 @@ RUN apk add --no-cache \
         curl \
         git \
         icu-dev \
+        libjpeg-turbo-dev \
+        libpng-dev \
+        libwebp-dev \
+        freetype-dev \
+        font-noto-cjk \
         libstdc++ \
         libzip-dev \
         linux-headers \
@@ -23,9 +28,11 @@ RUN apk add --no-cache \
     && apk add --no-cache --virtual .build-deps $PHPIZE_DEPS \
     && cp /usr/share/zoneinfo/${TZ} /etc/localtime \
     && echo "${TZ}" > /etc/timezone \
+    && docker-php-ext-configure gd --with-freetype --with-jpeg --with-webp \
     && docker-php-ext-install -j$(nproc) \
         bcmath \
         curl \
+        gd \
         intl \
         mbstring \
         mysqli \

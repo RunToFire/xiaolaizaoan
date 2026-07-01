@@ -15,6 +15,7 @@ class WechatOfficialAccount extends Model
         'token',
         'aes_key',
         'original_id',
+        'qrcode_url',
         'encoding_type',
         'is_active',
         'menu_config',

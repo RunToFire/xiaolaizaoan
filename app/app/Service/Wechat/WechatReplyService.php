@@ -5,11 +5,24 @@ declare(strict_types=1);
 namespace App\Service\Wechat;
 
 use App\Model\WechatReplyRule;
+use Hyperf\Di\Annotation\Inject;
+use Throwable;
 
 class WechatReplyService
 {
+    #[Inject]
+    protected WechatPunchCardService $punchCardService;
+
     public function buildReplyXml(int $accountId, array $message): string
     {
+        if ($this->isPunchCardEvent($message)) {
+            try {
+                return $this->media($message, 'image', $this->punchCardService->createPunchMediaId($accountId, $message));
+            } catch (Throwable $exception) {
+                return $this->text($message, $exception->getMessage());
+            }
+        }
+
         $rule = $this->findMatchedRule($accountId, $message);
         if ($rule === null) {
             return $this->text($message, 'success');
@@ -60,6 +73,13 @@ class WechatReplyService
         return null;
     }
 
+    private function isPunchCardEvent(array $message): bool
+    {
+        return strtolower((string) ($message['MsgType'] ?? '')) === 'event'
+            && strtolower((string) ($message['Event'] ?? '')) === 'click'
+            && strtoupper((string) ($message['EventKey'] ?? '')) === 'DAKA';
+    }
+
     private function matchesType(WechatReplyRule $rule, array $message): bool
     {
         $ruleType = (string) ($rule->msg_type ?? '*');
@@ -86,6 +106,10 @@ class WechatReplyService
         }
 
         $text = (string) ($message['Content'] ?? '');
+        if ($text === '' && strtolower((string) ($message['MsgType'] ?? '')) === 'event') {
+            $text = (string) ($message['EventKey'] ?? '');
+        }
+
         if ($text === '') {
             return false;
         }

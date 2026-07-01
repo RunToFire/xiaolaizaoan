@@ -1,0 +1,402 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Service\Wechat;
+
+use App\Model\HeartQuote;
+use App\Model\MaterialImage;
+use App\Model\PunchRecord;
+use App\Model\WechatOfficialAccount;
+use App\Model\WechatUser;
+use DateTimeImmutable;
+use DateTimeInterface;
+use GdImage;
+use GuzzleHttp\Client;
+use Hyperf\Di\Annotation\Inject;
+use RuntimeException;
+
+class WechatPunchCardService
+{
+    #[Inject]
+    protected WechatUserService $wechatUserService;
+
+    public function createPunchMediaId(int $accountId, array $message): string
+    {
+        $account = WechatOfficialAccount::query()->find($accountId);
+        if ($account === null) {
+            throw new RuntimeException('official account not found');
+        }
+
+        $user = WechatUser::query()
+            ->where('account_id', $accountId)
+            ->where('openid', (string) ($message['FromUserName'] ?? ''))
+            ->first();
+        if ($user === null) {
+            throw new RuntimeException('wechat user not found');
+        }
+
+        $image = MaterialImage::query()
+            ->where('is_active', 1)
+            ->orderByRaw('RAND()')
+            ->first();
+        if ($image === null) {
+            throw new RuntimeException('请先上传至少一张启用中的图片素材');
+        }
+
+        $quote = $this->randomQuote((int) ($image->group_id ?? 0));
+        if ($quote === null) {
+            throw new RuntimeException('请先添加至少一条启用中的心语签');
+        }
+
+        $cardPath = $this->composeCard($user, $image, $quote);
+        $mediaId = $this->uploadTemporaryImage($account, $cardPath);
+
+        $coordinates = $this->wechatUserService->coordinatesForPunch($user, $message);
+        PunchRecord::query()->create([
+            'account_id' => $accountId,
+            'user_id' => $user->id,
+            'parent_user_id' => $user->parent_user_id,
+            'material_image_id' => $image->id,
+            'heart_quote_id' => $quote->id,
+            'punched_at' => date('Y-m-d H:i:s'),
+            'latitude' => $coordinates['latitude'],
+            'longitude' => $coordinates['longitude'],
+            'location_label' => $coordinates['label'] ?: null,
+            'image_path' => $cardPath,
+            'image_url' => '/admin-api/materials/images/' . $image->id . '/file',
+            'wechat_media_id' => $mediaId,
+        ]);
+
+        return $mediaId;
+    }
+
+    private function randomQuote(int $groupId): ?HeartQuote
+    {
+        if ($groupId > 0) {
+            $quote = HeartQuote::query()
+                ->where('is_active', 1)
+                ->where('group_id', $groupId)
+                ->orderByRaw('RAND()')
+                ->first();
+            if ($quote !== null) {
+                return $quote;
+            }
+        }
+
+        return HeartQuote::query()
+            ->where('is_active', 1)
+            ->orderByRaw('RAND()')
+            ->first();
+    }
+
+    private function composeCard(WechatUser $user, MaterialImage $image, HeartQuote $quote): string
+    {
+        $sourcePath = BASE_PATH . '/' . $image->file_path;
+        if (! is_file($sourcePath)) {
+            throw new RuntimeException('material image file not found');
+        }
+
+        $canvasWidth = 1125;
+        $canvasHeight = 1500;
+        $canvas = imagecreatetruecolor($canvasWidth, $canvasHeight);
+        imagealphablending($canvas, true);
+        imagesavealpha($canvas, true);
+
+        $white = imagecolorallocate($canvas, 255, 255, 255);
+        $softWhite = imagecolorallocatealpha($canvas, 255, 255, 255, 28);
+        $topMask = imagecolorallocatealpha($canvas, 0, 0, 0, 92);
+        $bottomMask = imagecolorallocatealpha($canvas, 0, 0, 0, 86);
+
+        $this->copyCover($canvas, $this->loadImage($sourcePath), 0, 0, $canvasWidth, $canvasHeight);
+        imagefilledrectangle($canvas, 0, 0, $canvasWidth, 380, $topMask);
+        imagefilledrectangle($canvas, 0, 1180, $canvasWidth, $canvasHeight, $bottomMask);
+
+        $font = $this->fontPath();
+        $meta = $this->buildPunchMeta($user);
+        $quoteText = trim((string) $quote->content);
+        $avatarPath = $this->wechatUserService->ensureAvatarPath($user);
+
+        if ($avatarPath !== null && is_file($avatarPath)) {
+            $this->drawCircleAvatar($canvas, $this->loadImage($avatarPath), 40, 42, 164);
+        }
+
+        if ($font !== null) {
+            $this->drawText($canvas, $font, 62, 48, 390, '坚持早安', $white, 4);
+            $this->drawText($canvas, $font, 148, 46, 520, (string) $meta['streak_days'], $white, 5);
+            $this->drawText($canvas, $font, 58, 212, 520, '天', $white, 4);
+
+            $this->drawText($canvas, $font, 46, 48, 700, '今天起来', $softWhite, 3);
+            $this->drawText($canvas, $font, 126, 46, 840, (string) $meta['time'], $white, 5);
+
+            $this->drawText($canvas, $font, 104, 1080, 106, (string) $meta['day'], $white, 5, 'right');
+            $this->drawText($canvas, $font, 48, 1080, 182, (string) $meta['year_month'], $white, 3, 'right');
+
+            $titleX = (int) (($canvasWidth - $this->textWidth($font, 124, '早安安徽')) / 2);
+            $subTitleX = (int) (($canvasWidth - $this->textWidth($font, 92, 'MORNING')) / 2);
+            $this->drawText($canvas, $font, 124, $titleX, 246, '早安安徽', $white, 5);
+            $this->drawText($canvas, $font, 92, $subTitleX, 368, 'MORNING', $white, 4);
+
+            $this->drawWrappedText($canvas, $quoteText, $font, 58, 48, 1360, 600, $white, 88, 2);
+        } else {
+            imagestring($canvas, 5, 48, 390, 'Good Morning', $white);
+            imagestring($canvas, 5, 48, 450, 'Days ' . $meta['streak_days'], $white);
+            imagestring($canvas, 5, 48, 700, 'Time ' . $meta['time'], $white);
+            imagestring($canvas, 5, 980, 60, $meta['day'], $white);
+            imagestring($canvas, 4, 920, 130, $meta['year_month'], $white);
+            imagestring($canvas, 5, 48, 1320, $quoteText, $white);
+        }
+
+        $dir = BASE_PATH . '/runtime/materials/generated';
+        if (! is_dir($dir)) {
+            mkdir($dir, 0775, true);
+        }
+
+        $path = $dir . '/punch_' . date('YmdHis') . '_' . bin2hex(random_bytes(4)) . '.jpg';
+        imagejpeg($canvas, $path, 90);
+        imagedestroy($canvas);
+
+        return $path;
+    }
+
+    private function buildPunchMeta(WechatUser $user): array
+    {
+        $now = new DateTimeImmutable();
+
+        return [
+            'streak_days' => $this->streakDays($user, $now),
+            'time' => $now->format('H:i'),
+            'day' => $now->format('d'),
+            'year_month' => $now->format('Y.m'),
+        ];
+    }
+
+    private function streakDays(WechatUser $user, DateTimeImmutable $today): int
+    {
+        $uniqueDates = [
+            $today->format('Y-m-d') => true,
+        ];
+
+        $records = PunchRecord::query()
+            ->where('user_id', $user->id)
+            ->orderBy('punched_at', 'desc')
+            ->get();
+
+        foreach ($records as $record) {
+            $date = $this->dateString($record->punched_at);
+            if ($date !== null) {
+                $uniqueDates[$date] = true;
+            }
+        }
+
+        $cursor = $today;
+        $days = 0;
+        while (! empty($uniqueDates[$cursor->format('Y-m-d')])) {
+            $days++;
+            $cursor = $cursor->modify('-1 day');
+        }
+
+        return $days;
+    }
+
+    private function dateString(mixed $value): ?string
+    {
+        if ($value instanceof DateTimeInterface) {
+            return $value->format('Y-m-d');
+        }
+
+        $text = trim((string) $value);
+        if ($text === '') {
+            return null;
+        }
+
+        return substr($text, 0, 10);
+    }
+
+    private function uploadTemporaryImage(WechatOfficialAccount $account, string $path): string
+    {
+        $client = new Client(['timeout' => 20.0]);
+        $response = $client->post('https://api.weixin.qq.com/cgi-bin/media/upload', [
+            'query' => [
+                'access_token' => $this->accessToken($account),
+                'type' => 'image',
+            ],
+            'multipart' => [
+                [
+                    'name' => 'media',
+                    'contents' => fopen($path, 'rb'),
+                    'filename' => basename($path),
+                ],
+            ],
+        ]);
+
+        $result = json_decode((string) $response->getBody(), true);
+        if (! is_array($result) || empty($result['media_id'])) {
+            throw new RuntimeException('wechat media upload failed: ' . (string) ($result['errmsg'] ?? 'unknown error'));
+        }
+
+        return (string) $result['media_id'];
+    }
+
+    private function accessToken(WechatOfficialAccount $account): string
+    {
+        $client = new Client(['timeout' => 10.0]);
+        $response = $client->get('https://api.weixin.qq.com/cgi-bin/token', [
+            'query' => [
+                'grant_type' => 'client_credential',
+                'appid' => $account->app_id,
+                'secret' => $account->app_secret,
+            ],
+        ]);
+
+        $result = json_decode((string) $response->getBody(), true);
+        if (! is_array($result) || empty($result['access_token'])) {
+            throw new RuntimeException('wechat access_token request failed: ' . (string) ($result['errmsg'] ?? 'unknown error'));
+        }
+
+        return (string) $result['access_token'];
+    }
+
+    private function copyCover(GdImage $canvas, GdImage $source, int $x, int $y, int $width, int $height): void
+    {
+        $sourceWidth = imagesx($source);
+        $sourceHeight = imagesy($source);
+        $scale = max($width / $sourceWidth, $height / $sourceHeight);
+        $cropWidth = (int) ($width / $scale);
+        $cropHeight = (int) ($height / $scale);
+        $srcX = (int) (($sourceWidth - $cropWidth) / 2);
+        $srcY = (int) (($sourceHeight - $cropHeight) / 2);
+        imagecopyresampled($canvas, $source, $x, $y, $srcX, $srcY, $width, $height, $cropWidth, $cropHeight);
+        imagedestroy($source);
+    }
+
+    private function drawCircleAvatar(GdImage $canvas, GdImage $source, int $x, int $y, int $size): void
+    {
+        $avatar = imagecreatetruecolor($size, $size);
+        imagealphablending($avatar, false);
+        imagesavealpha($avatar, true);
+        $transparent = imagecolorallocatealpha($avatar, 0, 0, 0, 127);
+        imagefill($avatar, 0, 0, $transparent);
+
+        $sourceWidth = imagesx($source);
+        $sourceHeight = imagesy($source);
+        $side = min($sourceWidth, $sourceHeight);
+        $srcX = (int) (($sourceWidth - $side) / 2);
+        $srcY = (int) (($sourceHeight - $side) / 2);
+        imagecopyresampled($avatar, $source, 0, 0, $srcX, $srcY, $size, $size, $side, $side);
+        imagedestroy($source);
+
+        $radius = $size / 2;
+        for ($px = 0; $px < $size; $px++) {
+            for ($py = 0; $py < $size; $py++) {
+                $dx = $px - $radius;
+                $dy = $py - $radius;
+                if (($dx * $dx) + ($dy * $dy) > $radius * $radius) {
+                    imagesetpixel($avatar, $px, $py, $transparent);
+                }
+            }
+        }
+
+        imagecopy($canvas, $avatar, $x, $y, 0, 0, $size, $size);
+        imagedestroy($avatar);
+    }
+
+    private function loadImage(string $path): GdImage
+    {
+        $info = @getimagesize($path);
+        $mime = is_array($info) ? (string) ($info['mime'] ?? '') : '';
+        $image = match ($mime) {
+            'image/png' => imagecreatefrompng($path),
+            'image/webp' => imagecreatefromwebp($path),
+            default => imagecreatefromjpeg($path),
+        };
+
+        if (! $image instanceof GdImage) {
+            throw new RuntimeException('image load failed');
+        }
+
+        return $image;
+    }
+
+    private function drawText(
+        GdImage $canvas,
+        string $font,
+        int $fontSize,
+        int $x,
+        int $y,
+        string $text,
+        int $color,
+        int $shadowStrength,
+        string $align = 'left'
+    ): void {
+        $shadowColor = imagecolorallocatealpha($canvas, 0, 0, 0, max(0, 92 - $shadowStrength * 8));
+        $textWidth = $this->textWidth($font, $fontSize, $text);
+        $drawX = $align === 'right' ? $x - $textWidth : $x;
+        imagettftext($canvas, $fontSize, 0, $drawX + 4, $y + 4, $shadowColor, $font, $text);
+        imagettftext($canvas, $fontSize, 0, $drawX, $y, $color, $font, $text);
+    }
+
+    private function drawWrappedText(
+        GdImage $canvas,
+        string $text,
+        string $font,
+        int $fontSize,
+        int $x,
+        int $y,
+        int $maxWidth,
+        int $color,
+        int $lineHeight,
+        int $maxLines
+    ): void {
+        $lines = [];
+        $line = '';
+        $length = mb_strlen($text);
+
+        for ($i = 0; $i < $length; $i++) {
+            $candidate = $line . mb_substr($text, $i, 1);
+            $width = $this->textWidth($font, $fontSize, $candidate);
+            if ($width > $maxWidth && $line !== '') {
+                $lines[] = $line;
+                $line = mb_substr($text, $i, 1);
+                if (count($lines) >= $maxLines) {
+                    break;
+                }
+                continue;
+            }
+            $line = $candidate;
+        }
+
+        if ($line !== '' && count($lines) < $maxLines) {
+            $lines[] = $line;
+        }
+
+        foreach ($lines as $index => $lineText) {
+            $this->drawText($canvas, $font, $fontSize, $x, $y + $lineHeight * $index, $lineText, $color, 4);
+        }
+    }
+
+    private function textWidth(string $font, int $fontSize, string $text): int
+    {
+        $box = imagettfbbox($fontSize, 0, $font, $text);
+
+        return abs((int) ($box[2] ?? 0) - (int) ($box[0] ?? 0));
+    }
+
+    private function fontPath(): ?string
+    {
+        foreach ([
+            BASE_PATH . '/storage/fonts/msyhbd.ttc',
+            BASE_PATH . '/storage/fonts/msyh.ttc',
+            '/usr/share/fonts/noto-cjk/NotoSansCJK-Bold.ttc',
+            '/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc',
+            '/usr/share/fonts/noto-cjk/NotoSansCJKsc-Regular.otf',
+            '/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc',
+        ] as $path) {
+            if (is_file($path)) {
+                return $path;
+            }
+        }
+
+        return null;
+    }
+}
